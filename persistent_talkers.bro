@@ -4,9 +4,6 @@ module Persistent ;
 @load base/utils/site.bro
 @load policy/misc/profiling.bro
 
-redef Site::local_nets += { 128.3.0.0/16, 131.243.0.0/16, }; 
-
-redef Site::neighbor_nets += { 128.55.0.0/16, 198.128.0.0/16, 198.129.0.0/16, } ; 
 export 
 {
 

@@ -1,6 +1,3 @@
-#redef exit_only_after_terminate=T;
-
-
 module SMTP; 
 
 @load smtp-decode-encoded-word-subjects.bro
@@ -11,7 +8,6 @@ export {
 	global smtp_debug=open_log_file("smtp-debug"); 
 
 	redef enum Notice::Type += {
-                 #Indicates that an MD5 sum was calculated for an HTTP response body.
 		HighNumberRecepients , 
 		HighVolumeSender, 	
 		HighVolumeSubject, 
@@ -21,7 +17,6 @@ export {
 		BulkSender, 
 	}; 
 
-#	global email_domain = /@lbl\.gov/ &redef ; 
 	global email_domain = /XXXX/ &redef ; 
 
 
@@ -78,7 +73,7 @@ export {
 
         global ok_bulk_sender: table[string] of BulkSenderVal = table() &synchronized &redef; 
 
-	global ok_bulk_sender_ip_feed="/YURT/feeds/BRO-feeds/smtp-thresholds::ok_bulk_sender" &redef ;
+	global ok_bulk_sender_ip_feed="/usr/local/BRO-feeds/smtp-thresholds::ok_bulk_sender" &redef ;
 
 	global ignore_smtp_subjects: pattern = /phenixbb/ &redef ; 
 
@@ -102,10 +97,8 @@ redef Cluster::worker2manager_events += /SMTP::w_m_new_email/;
 @endif
 
 
-# check_thresh =  check_smtp_threshold(smtp_threshold, smtp_to_threshold_idx, mailfrom, n);
 function check_smtp_threshold(v: vector of count, idx: table[string] of count, orig: string, n: count):bool
 {
-#	print fmt ("orig: %s and IDX_orig: %s and n is: %s and v[idx[orig]] is: %s", orig, idx[orig], n, v[idx[orig]]);
  if ( idx[orig] < |v| && n >= v[idx[orig]] )
                 {
                 ++idx[orig];
@@ -142,7 +135,6 @@ function clean_sender(sender: string): string
 	else
 	{
 		to_name =  strip(gsub(to_n[2], pat, ""));
-		#print smtp_debug, fmt ("to_n: %s", to_n[2]) ;
 	}
 
 
@@ -159,7 +151,6 @@ function generate_threshold_notice(mailfrom: string): string
 	local n = |smtp_activity[mailfrom]$rcptto|; 
 	local msg = string_cat ("Sender: ", mailfrom, " sent emails to more than: ", fmt("%s", n), " recipients in ", fmt("%s", duration));
 
-	#msg += fmt (" Details: from: %s", smtp_activity[mailfrom]$mailfrom);
 	msg += fmt (" ## to: [%s] recipients", |smtp_activity[mailfrom]$to|);
 	msg += fmt (" ## rcptto: %s",|smtp_activity[mailfrom]$rcptto|) ;
 
@@ -255,7 +246,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 
         if( clean_mf in ok_bulk_sender)
         {
-                #print smtp_debug, fmt ("sender in ok_bulk_sender_list: %s", mailfrom);
                 return ;
         }
 
@@ -313,7 +303,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 			rcptto =  strip(gsub(rcptto, pat, "")); 
 			rcptto =  to_lower(strip(gsub(rcptto, email_domain, ""))); 
 			rcptto =  strip(gsub(rcptto, email_domain, "")); 
-			#print smtp_debug,  fmt ("rcptto: %s", rcptto); 
 			
 			if ( rcptto !in smtp_activity[mailfrom]$rcptto ) 
 			{
@@ -330,11 +319,9 @@ function populate_smtp_activity (rec: SMTP::Info)
 
 	if (rec?$to) 
 	{ 
-		#print fmt ("1) To: %s", rec$to); 
 		for (to in rec$to) 
 		{ 
 			local to_split = split(to,/,/); 
-			#print fmt ("TO_SPLIT : %s", to_split); 
 
 				for (every_to in to_split) 	
 				{ 	local to_n = split(to_split[every_to],/</) ; 
@@ -346,7 +333,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 					else 
 					{ 
 						to_name =  strip(gsub(to_n[2], pat, "")); 
-						#print fmt ("to_n: %s", to_n[2]) ; 
 					} 
 
 
@@ -369,7 +355,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 			
 	if ( rec?$from ) 
 	{ 
-		#print smtp_debug, fmt ("from: %s", rec$from); 
 
 		local fm=split(rec$from,/</);	
 			local from: string; 
@@ -379,7 +364,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 				from=strip(gsub(fm[2],pat,""));	
 			
 			from=to_lower(from) ; 	
-			#from = fmt("%s", to_lower(strip(gsub(from,email_domain,"")))); 
 
 			if (rec$from !in smtp_activity[mailfrom]$from)
 			{ 
@@ -403,7 +387,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 		
 		reply_to = to_lower(strip(gsub(reply_to,email_domain, "")));
 
-		#print fmt("3) REPLY_to: %s", reply_to); 
 
 		if (reply_to !in smtp_activity[mailfrom]$reply_to) 
 			add smtp_activity[mailfrom]$reply_to[reply_to]; 
@@ -419,7 +402,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 	} 
 	else 
 	{ 
-		#print fmt("NO SUbject: %s", rec); 
 		return ; 
 	}
 
@@ -449,8 +431,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 	} 
 		
 
-	#print fmt ("%s", rec); 
-	#print smtp_debug, fmt ("From: %s, TO: %s, Subject: %s", mailfrom, rcptto, subject); 
 
 @if (! Cluster::is_enabled() || ( Cluster::is_enabled() && Cluster::local_node_type() == Cluster::MANAGER ))
 		
@@ -467,7 +447,6 @@ function populate_smtp_activity (rec: SMTP::Info)
 
 	if (check_thresh)
 	{
-		#print fmt ("Threshold is %s", n); 
 	
 		site_receipient=0 ; 
 		site_receipient = get_site_recipients_count(subject); 
@@ -522,14 +501,10 @@ function check_from_mailfrom(rec: SMTP::Info)
 local mf = rec$mailfrom; 
 local f = rec$from; 
 
-#print fmt ("%s , %s", mf, f); 
 
 local mailfrom=	clean_sender(mf); 
 local from=	clean_sender(f); 
 
-#if (mailfrom !in from)
-#	print fmt ("%s , %s", mailfrom, from); 
-#
 } 
 
 event SMTP::log_smtp (rec: SMTP::Info) &priority=-5 
@@ -567,20 +542,11 @@ event bro_init()
 
 event bro_done()
 {
-        #for (a in ok_bulk_sender)
-        #        print fmt ("%s", a);
 
-#	for (a in smtp_subject_activity)
-	#print fmt ("%s %s", a, smtp_subject_activity[a]); 
 }
 
 
 
 
 
-#fields ts      uid     id.orig_h       id.orig_p       id.resp_h       id.resp_p       trans_depth     helo    mailfrom        rcptto  date    from    to      reply_to        msg_id  in_reply_to     subject x_originating_ip        first_received  second_received last_reply
-# path    user_agent      tls     fuids
 
-##[ts=1427120395.997709, uid=CHf8X04Ajsu5U6VNfi, id=[orig_h=209.85.213.182, orig_p=35428/tcp, resp_h=128.3.41.120, resp_p=25/tcp], trans_depth=1, helo=mail-ig0-f182.google.com, mailfrom=<acanning@lbl.gov>, rcptto={^J^I<ogut@uic.edu>^J}, date=Mon, 23 Mar 2015 08:19:54 -0600, from=Andrew Canning <acanning@lbl.gov>, to={^J^Iundisclosed-recipients:;^J}, reply_to=<uninitialized>, msg_id=<CAGovi2yaEeBLSbq9H8X+bS7uv_q3AeHdns1fmg+8inW7emT_Tg@mail.gmail.com>, in_reply_to=<uninitialized>, subject=Important document, x_originating_ip=<uninitialized>, first_received=by 10.64.149.195 with HTTP; Mon, 23 Mar 2015 07:19:54 -0700 (PDT), second_received=by igcau2 with SMTP id au2so43372030igc.0        for <ogut@uic.edu>; Mon, 23 Mar 2015 07:19:55 -0700 (PDT), last_reply=250 ok:  Message 80449324 accepted, path=[128.3.41.120, 209.85.213.182, 10.64.149.195], user_agent=<uninitialized>, tls=F, process_received_from=T, has_client_activity=T, entity=<uninitialized>, fuids=[FNNE2H1JTfy5NWzdih, FAJIAXhJWq4kaHji]]
-
-#NOTICE([$note=SMTP_Invalid_rcptto, $msg=fmt("Invalid rectto :: %s (subject=%s, from:%s)", rcptto, rec?$subject, rec$from), $conn=c, $sub=rcptto, $identifier=cat(rcptto),$suppress_for=1 mins]);

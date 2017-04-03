@@ -245,12 +245,11 @@ event bro_init()
     Log::create_stream(Persistent::Conn_LOG, [$columns=Info]);
     }
 
-event bro_done()
+event new_connection(c: connection) &priority=-10
     {
-    #print fmt ("Size of table is now %s", |long_connections|);
     }
 
-event new_connection(c: connection) &priority=-10
+event conn_state_expire(c: connection)
     {
     }
 
@@ -345,18 +344,98 @@ event connection_state_remove(c: connection) &priority=-10
 
     }
 
-event conn_state_expire(c: connection)
+event connection_state_remove(c: connection) &priority=-10
     {
+    local src = c$id$orig_h;
+    local dst = c$id$resp_h ;
+    local msg = "" ;
+    local time_diff: string;
+    local bloom_idx=fmt ("%s-%s", src,dst);
+    if (c$id$resp_p in chatty_ports)
+        return ;
+    if (( src in Site::local_nets && dst in Site::local_nets) || src in Site::neighbor_nets || dst in Site::neighbor_nets)
+        return ;
+    if (is_reverse_failed_conn(c) || is_failed_conn(c) || ( /[Dd]/ !in c$history))
+        {
+        #print per_debug, fmt ("%s failed-conn: %s, %s, %s", c$conn$ts, c$conn$uid, src, dst );
+        return ;
+        }
+
+    if ([src, dst]  !in long_connections)
+        {
+        local conn_rec: Track_Conn_Record ;
+        conn_rec$src = src ;
+        conn_rec$dst = dst ;
+        conn_rec$conn_count = 0 ;
+        conn_rec$first_seen_time = c$start_time ;
+        conn_rec$last_seen = c$start_time ;
+        conn_rec$inactive_for=0 sec;
+        conn_rec$history = c$history ;
+        conn_rec$conn_state = c$conn$conn_state;
+        conn_rec$per_conn_duration = c$duration ;
+        long_connections[src, dst]=conn_rec;
+        }
+
+    long_connections[src, dst]$conn_count += 1 ;
+    long_connections[src, dst]$last_seen = c$conn$ts;
+    time_diff = duration_to_hour_mins_secs(long_connections[src, dst]$last_seen - long_connections[src, dst]$first_seen_time) ;
+    long_connections[src, dst]$inactive_for = network_time () - long_connections[src, dst]$last_seen ;
+    long_connections[src, dst]$mean_time_between_conn = (long_connections[src, dst]$last_seen - long_connections[src, dst]$first_seen_time) / long_connections[src, dst]$conn_count ;
+
+    local mtbc = long_connections[src, dst]$mean_time_between_conn ;
+    local last_seen = long_connections[src, dst]$last_seen ;
+    local first_seen = long_connections[src, dst]$first_seen_time ;
+    local conn_count = long_connections[src, dst]$conn_count ;
+    if (c$duration > 1 msec)
+        {
+
+        local a = interval_to_double(long_connections[src, dst]$per_conn_duration) ;
+
+        if ((interval_to_double(c$duration)  > 10 * interval_to_double(long_connections[src, dst]$per_conn_duration/conn_count)) && conn_count > 10 &&mtbc > 0 sec)
+            {
+            msg = fmt ("long connections : %s, %s, duration: %s (%s) ", src, dst, time_diff, long_connections[src, dst]);
+            #debug_log (fmt ("%s", c));
+            #if (debug == 1)
+                #print per_debug, fmt ("SPIKE :: %s, %s, %s, %s, %s", c$duration, long_connections[src, dst]$per_conn_duration, conn_count, a/conn_count, double_to_interval(a/conn_count));
+            NOTICE([$note=DurationSpike, $conn=c, $msg=msg, $identifier=cat(src, dst)]);
+            }
+
+        long_connections[src, dst]$per_conn_duration += c$duration;
+
+        #long_connections[src, dst]$per_conn_duration += double_to_interval(interval_to_double(long_connections[src, dst]$per_conn_duration+c$duration)/conn_count);
+
+            #if (debug == 1)
+            #   print per_debug, fmt (":: %s, %s, %s, %s, %s", c$duration, long_connections[src, dst]$per_conn_duration, conn_count, a/conn_count, double_to_interval(a/conn_count));
+
+        }
+
+    #if ( (long_connections[src, dst]$last_seen - long_connections[src, dst]$first_seen_time) > 5 mins)
+    #    {
+    #    log_persistent(long_connections[src, dst], time_diff, ProlongConversation, ONGOING);
+    #    local msg = fmt ("long connections : %s, %s, duration: %s (%s) ", src, dst, time_diff, long_connections[src, dst]);
+    #    NOTICE([$note=ProlongConversation, $conn=c, $msg=msg, $identifier=cat(src, dst)]);
+    #    }
+
+    if (mtbc < 1 sec && mtbc > 0.00001 sec && conn_count > 50)
+        {
+        log_persistent(long_connections[src, dst], time_diff, HastyChitChat, ONGOING);
+        msg = fmt ("HastyChitChat: %s %s, duration: %s (%s) ", src, dst, time_diff, long_connections[src, dst]);
+        NOTICE([$note=HastyChitChat, $conn=c, $msg=msg, $identifier=cat(src, dst)]);
+        }
+
+    if (mtbc < 1 sec && mtbc > 0.00001 sec && conn_count > 2500)
+        {
+        log_persistent(long_connections[src, dst], time_diff, ProlongChatter, ONGOING);
+        msg = fmt ("Prolonged_ChitChat: %s %s, duration: %s (%s) ", src, dst, time_diff, long_connections[src, dst]);
+        NOTICE([$note=ProlongChatter, $conn=c, $msg=msg, $identifier=cat(src, dst)]);
+        }
+
+    log_persistent(long_connections[src, dst], time_diff, ProlongConversation, ONGOING);
+    #debug_log (fmt ("%s, %s, %s", c$conn$ts, c$id, c$duration));
+
     }
 
-event print_table_size()
+event bro_done()
     {
-    return;
-    local original_size = |long_connections|;
-    local msg:string ;
-    local byte_size = val_size(long_connections);
-    msg = fmt ("table Bytes: %s , numbers was : %s", byte_size, original_size);
-    ##print per_debug, fmt ("table Bytes: %s , numbers was : %s", byte_size, original_size);
-    NOTICE([$note=Table_size, $msg=msg]);
-    #schedule 1 min { print_table_size ()}  ;
+    #print fmt ("Size of table is now %s", |long_connections|);
     }
